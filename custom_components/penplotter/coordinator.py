@@ -4,6 +4,7 @@ from datetime import timedelta
 import aiohttp
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
+from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from .const import DOMAIN, SCAN_INTERVAL_SECONDS, SSL_CONTEXT
@@ -20,6 +21,13 @@ class PenPlotterCoordinator(DataUpdateCoordinator):
             update_interval=timedelta(seconds=SCAN_INTERVAL_SECONDS),
         )
         self.base_url = f"https://{host}:{port}"
+        self.device_info = DeviceInfo(
+            identifiers={(DOMAIN, f"{host}:{port}")},
+            name="Pen Plotter",
+            manufacturer="Evil Mad Scientist",
+            model="AxiDraw",
+            configuration_url=self.base_url,
+        )
 
     async def _async_update_data(self) -> dict:
         session = async_get_clientsession(self.hass)

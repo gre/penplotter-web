@@ -32,13 +32,15 @@ async def async_setup_entry(
 
 
 class PenPlotterButton(CoordinatorEntity, ButtonEntity):
+    _attr_has_entity_name = True
 
     def __init__(self, coordinator, entry, key, name, icon, api_path) -> None:
         super().__init__(coordinator)
         self._api_path = api_path
         self._attr_unique_id = f"{entry.entry_id}_{key}"
-        self._attr_name = f"Pen Plotter {name}"
+        self._attr_name = name
         self._attr_icon = icon
+        self._attr_device_info = coordinator.device_info
 
     async def async_press(self) -> None:
         await self.coordinator.api_post(self._api_path)

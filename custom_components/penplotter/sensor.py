@@ -22,11 +22,13 @@ async def async_setup_entry(
 
 class PenPlotterStateSensor(CoordinatorEntity, SensorEntity):
     _attr_icon = "mdi:printer-3d-nozzle"
+    _attr_has_entity_name = True
 
     def __init__(self, coordinator: PenPlotterCoordinator, entry: ConfigEntry) -> None:
         super().__init__(coordinator)
         self._attr_unique_id = f"{entry.entry_id}_state"
-        self._attr_name = "Pen Plotter State"
+        self._attr_name = "State"
+        self._attr_device_info = coordinator.device_info
 
     @property
     def native_value(self) -> str | None:
@@ -42,11 +44,13 @@ class PenPlotterStateSensor(CoordinatorEntity, SensorEntity):
 class PenPlotterProgressSensor(CoordinatorEntity, SensorEntity):
     _attr_icon = "mdi:percent"
     _attr_native_unit_of_measurement = "%"
+    _attr_has_entity_name = True
 
     def __init__(self, coordinator: PenPlotterCoordinator, entry: ConfigEntry) -> None:
         super().__init__(coordinator)
         self._attr_unique_id = f"{entry.entry_id}_progress"
-        self._attr_name = "Pen Plotter Progress"
+        self._attr_name = "Progress"
+        self._attr_device_info = coordinator.device_info
 
     @property
     def native_value(self) -> float | None:
