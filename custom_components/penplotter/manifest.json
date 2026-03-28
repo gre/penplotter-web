@@ -1,0 +1,11 @@
+{
+  "domain": "penplotter",
+  "name": "Pen Plotter (AxiDraw)",
+  "codeowners": ["@gre"],
+  "config_flow": true,
+  "documentation": "https://github.com/gre/penplotter-web",
+  "issue_tracker": "https://github.com/gre/penplotter-web/issues",
+  "integration_type": "hub",
+  "iot_class": "local_polling",
+  "version": "0.1.0"
+}

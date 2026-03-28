@@ -1,0 +1,21 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Connect to Pen Plotter",
+        "description": "Enter the hostname and port of your penplotter-web server.",
+        "data": {
+          "host": "Hostname",
+          "port": "Port",
+          "verify_ssl": "Verify SSL certificate"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Cannot connect to the plotter. Check the hostname and port."
+    },
+    "abort": {
+      "already_configured": "This plotter is already configured."
+    }
+  }
+}
