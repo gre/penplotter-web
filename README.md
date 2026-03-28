@@ -53,6 +53,9 @@ A custom integration is included for [HACS](https://hacs.xyz/).
 4. **Settings → Devices & Services → Add Integration → Pen Plotter**
 5. Enter your hostname (e.g. `rasp4blue.local`) and port (`4443`)
 
+![Setup step 1](docs/ha-setup-1.png)
+![Setup step 2](docs/ha-setup-2.png)
+
 ### Exposed entities
 
 | Entity | Type | Description |
@@ -65,6 +68,9 @@ A custom integration is included for [HACS](https://hacs.xyz/).
 | Pen Plotter Pen Up | Button | Raise pen |
 | Pen Plotter Pen Down | Button | Lower pen |
 | Pen Plotter Home | Button | Return to home position |
+
+![Device state](docs/ha-state.png)
+![Dashboard](docs/ha-dashboard.png)
 
 Status is polled every 15 seconds. The server must be running with HTTPS (self-signed certificates are accepted).
 
