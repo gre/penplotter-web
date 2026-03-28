@@ -39,7 +39,7 @@ class PenPlotterConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     async def _validate(self, user_input: dict) -> dict:
         try:
             session = async_get_clientsession(self.hass)
-            ssl_ctx = make_ssl_context(user_input.get(CONF_VERIFY_SSL, False))
+            ssl_ctx = make_ssl_context(user_input.get(CONF_VERIFY_SSL, True))
             base = build_base_url(user_input[CONF_HOST], user_input[CONF_PORT])
             async with session.get(
                 f"{base}/api/status",
@@ -48,6 +48,6 @@ class PenPlotterConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             ) as resp:
                 if resp.status != 200:
                     return {"base": "cannot_connect"}
-        except (aiohttp.ClientError, TimeoutError):
+        except (aiohttp.ClientError, TimeoutError, ValueError):
             return {"base": "cannot_connect"}
         return {}
