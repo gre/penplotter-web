@@ -5,6 +5,7 @@
         "title": "Connect to Pen Plotter",
         "description": "Enter the hostname and port of your penplotter-web server.",
         "data": {
+          "name": "Name",
           "host": "Hostname",
           "port": "Port"
         }

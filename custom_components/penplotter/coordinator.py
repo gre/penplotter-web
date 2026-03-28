@@ -15,15 +15,15 @@ _LOGGER = logging.getLogger(__name__)
 class PenPlotterCoordinator(DataUpdateCoordinator):
     """Polls the penplotter-web API for status."""
 
-    def __init__(self, hass: HomeAssistant, host: str, port: int) -> None:
+    def __init__(self, hass: HomeAssistant, host: str, port: int, entry_id: str, title: str) -> None:
         super().__init__(
             hass, _LOGGER, name=DOMAIN,
             update_interval=timedelta(seconds=SCAN_INTERVAL_SECONDS),
         )
         self.base_url = f"https://{host}:{port}"
         self.device_info = DeviceInfo(
-            identifiers={(DOMAIN, f"{host}:{port}")},
-            name="Pen Plotter",
+            identifiers={(DOMAIN, entry_id)},
+            name=title,
             manufacturer="Evil Mad Scientist",
             model="AxiDraw",
             configuration_url=self.base_url,
