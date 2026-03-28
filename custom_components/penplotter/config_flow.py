@@ -2,6 +2,7 @@ import aiohttp
 import voluptuous as vol
 from homeassistant import config_entries
 from homeassistant.const import CONF_HOST, CONF_PORT
+from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from .const import CONF_VERIFY_SSL, DEFAULT_PORT, DOMAIN, make_ssl_context
@@ -28,8 +29,8 @@ class PenPlotterConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         return self.async_show_form(
             step_id="user",
             data_schema=vol.Schema({
-                vol.Required(CONF_HOST): str,
-                vol.Required(CONF_PORT, default=DEFAULT_PORT): int,
+                vol.Required(CONF_HOST): cv.string,
+                vol.Required(CONF_PORT, default=DEFAULT_PORT): cv.port,
                 vol.Optional(CONF_VERIFY_SSL, default=False): bool,
             }),
             errors=errors,
