@@ -1,0 +1,8 @@
+__pycache__/
+.venv/
+certs/
+uploads/*.svg
+*.pyc
+penplotter-web.service
+db/
+TODO.md

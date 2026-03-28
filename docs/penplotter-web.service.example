@@ -1,0 +1,19 @@
+[Unit]
+Description=penplotter/web
+After=network.target
+
+[Service]
+Type=simple
+# Replace YOUR_USER and paths below with your setup
+User=YOUR_USER
+WorkingDirectory=/home/YOUR_USER/penplotter-web
+ExecStart=/home/YOUR_USER/penplotter-web/.venv/bin/python /home/YOUR_USER/penplotter-web/server.py
+Environment=SSL_KEY=/home/YOUR_USER/penplotter-web/certs/key.pem
+Environment=SSL_CERT=/home/YOUR_USER/penplotter-web/certs/cert.pem
+Environment=PATH=/home/YOUR_USER/.local/bin:/usr/bin:/bin
+Restart=on-failure
+RestartSec=3
+TimeoutStopSec=5
+
+[Install]
+WantedBy=multi-user.target

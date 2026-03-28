@@ -1,0 +1,945 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>penplotter/web</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600&family=DM+Sans:wght@400;500;600&display=swap');
+
+  :root {
+    --bg: #0e0e10;
+    --surface: #18181b;
+    --surface-2: #1e1e22;
+    --border: #2a2a2e;
+    --border-hover: #3a3a3e;
+    --text: #e4e4e7;
+    --text-dim: #71717a;
+    --accent: #22d3ee;
+    --accent-dim: rgba(34,211,238,0.12);
+    --green: #4ade80;
+    --green-dim: rgba(74,222,128,0.12);
+    --amber: #fbbf24;
+    --amber-dim: rgba(251,191,36,0.12);
+    --red: #f87171;
+    --red-dim: rgba(248,113,113,0.12);
+    --mono: 'JetBrains Mono', monospace;
+    --sans: 'DM Sans', system-ui, sans-serif;
+    --radius: 8px;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: var(--sans); background: var(--bg); color: var(--text); min-height: 100vh; -webkit-font-smoothing: antialiased; }
+  .app { max-width: 960px; margin: 0 auto; padding: 24px 20px 20px; min-height: 100vh; display: flex; flex-direction: column; }
+
+  header {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-bottom: 24px; padding-bottom: 20px; border-bottom: 1px solid var(--border);
+  }
+  .logo { display: flex; align-items: center; gap: 12px; }
+  .logo-icon {
+    width: 36px; height: 36px; border: 2px solid var(--accent); border-radius: 6px;
+    display: grid; place-items: center; color: var(--accent);
+  }
+  .logo h1 { font-family: var(--mono); font-size: 18px; font-weight: 500; letter-spacing: -0.02em; }
+  .logo h1 span { color: var(--text-dim); font-weight: 300; }
+
+  .status-badge {
+    font-family: var(--mono); font-size: 12px; font-weight: 500; padding: 6px 14px;
+    border-radius: 100px; text-transform: uppercase; letter-spacing: 0.05em; transition: all 0.3s;
+  }
+  .status-badge[data-state="idle"] { background: var(--green-dim); color: var(--green); }
+  .status-badge[data-state="plotting"] { background: var(--accent-dim); color: var(--accent); animation: pulse 2s infinite; }
+  .status-badge[data-state="paused"] { background: var(--amber-dim); color: var(--amber); }
+  .status-badge[data-state="error"] { background: var(--red-dim); color: var(--red); }
+  @keyframes pulse { 0%,100% { opacity:1; } 50% { opacity:0.6; } }
+
+  /* Top progress */
+  .top-progress { display: none; margin-bottom: 20px; }
+  .top-progress.active { display: block; }
+  .top-progress-track {
+    height: 32px; background: var(--surface); border: 1px solid var(--border);
+    border-radius: 8px; overflow: hidden; position: relative;
+  }
+  .top-progress-bar {
+    height: 100%; background: var(--accent-dim); border-radius: 8px;
+    transition: width 0.5s ease; width: 0%; position: absolute; top: 0; left: 0;
+  }
+  .top-progress-label {
+    position: absolute; inset: 0; display: flex; align-items: center;
+    justify-content: space-between; padding: 0 14px;
+    font-family: var(--mono); font-size: 12px; font-weight: 500;
+  }
+  .top-progress-file { color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .top-progress-stats { color: var(--accent); display: flex; gap: 10px; flex-shrink: 0; }
+  .top-progress-stats .eta { color: var(--text-dim); }
+
+  /* Sections */
+  .section { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); margin-bottom: 16px; overflow: hidden; }
+  .section-header {
+    padding: 14px 18px; font-family: var(--mono); font-size: 11px; font-weight: 600;
+    text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-dim);
+    border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between;
+  }
+  .section-body { padding: 18px; }
+  .section-header.collapsible { cursor: pointer; user-select: none; }
+  .section-header.collapsible::after {
+    content: ''; width: 6px; height: 6px; border-right: 2px solid var(--text-dim);
+    border-bottom: 2px solid var(--text-dim); transform: rotate(45deg); transition: transform 0.2s; margin-left: 8px;
+  }
+  .section-header.collapsible.collapsed::after { transform: rotate(-45deg); }
+  .section-header.collapsible.collapsed + .section-body { display: none; }
+
+  /* Buttons */
+  .btn {
+    font-family: var(--mono); font-size: 12px; font-weight: 500; padding: 7px 14px;
+    border-radius: 6px; border: 1px solid var(--border); background: var(--surface-2);
+    color: var(--text); cursor: pointer; transition: all 0.15s; white-space: nowrap;
+  }
+  .btn:hover { border-color: var(--border-hover); background: var(--border); }
+  .btn:active { transform: scale(0.97); }
+  .btn-accent { background: var(--accent); color: var(--bg); border-color: var(--accent); }
+  .btn-accent:hover { opacity: 0.85; border-color: var(--accent); background: var(--accent); }
+  .btn-danger { color: var(--red); border-color: transparent; background: transparent; }
+  .btn-danger:hover { background: var(--red-dim); border-color: transparent; }
+  .btn-sm { padding: 5px 10px; font-size: 11px; }
+  .btn-lg { padding: 10px 24px; font-size: 13px; }
+  .btn:disabled { opacity: 0.35; cursor: not-allowed; }
+  .btn-icon {
+    background: none; border: none; color: var(--text-dim); cursor: pointer;
+    font-size: 20px; padding: 4px; border-radius: 6px; transition: color 0.15s;
+    font-variant-emoji: text; line-height: 1;
+  }
+  .btn-icon:hover { color: var(--text); }
+
+  .mini-pad { display: grid; grid-template-columns: repeat(3, 34px); grid-template-rows: repeat(3, 34px); gap: 2px; }
+  .mini-pad .btn { width: 34px; height: 34px; padding: 0; font-size: 14px; display: grid; place-items: center; }
+  .mini-pad .pad-center { position: relative; display: flex; align-items: center; justify-content: center; }
+  .mini-pad .pad-center input {
+    width: 100%; height: 100%; text-align: center; font-family: var(--mono);
+    font-size: 9px; font-weight: 600; background: var(--bg); color: var(--accent);
+    border: 1px solid var(--border); border-radius: 4px; outline: none; padding: 0; -moz-appearance: textfield;
+  }
+  .mini-pad .pad-center input::-webkit-inner-spin-button,
+  .mini-pad .pad-center input::-webkit-outer-spin-button { -webkit-appearance: none; }
+  .mini-pad .pad-unit { position: absolute; bottom: 0; right: 2px; font-family: var(--mono); font-size: 6px; color: var(--text-dim); pointer-events: none; }
+
+  /* File picker — selected file display */
+  .selected-file-layout { display: flex; gap: 14px; }
+  .selected-file-content { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 8px; }
+  .selected-file-row { display: flex; align-items: center; gap: 12px; }
+  .selected-file-info { flex: 1; min-width: 0; }
+  .selected-file-name { font-family: var(--mono); font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .selected-file-meta { font-size: 11px; color: var(--text-dim); margin-left: 8px; }
+  .selected-file-actions { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
+  .selected-file-thumb {
+    width: 80px; height: 80px; background: #fff; border-radius: 6px; flex-shrink: 0;
+    overflow: hidden; cursor: pointer;
+  }
+  .selected-file-thumb svg { width: 100%; height: 100%; }
+  .config-summary {
+    font-family: var(--mono); font-size: 16px; color: var(--text-dim);
+    white-space: nowrap; font-variant-emoji: text;
+  }
+  @media (max-width: 700px) { .config-summary { display: none; } }
+  .selected-file-change {
+    flex-shrink: 0;
+  }
+
+  /* Layer tags */
+  .layer-list { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 10px; align-items: center; }
+  .layer-tag {
+    font-family: var(--mono); font-size: 10px; padding: 3px 8px;
+    background: var(--surface-2); border: 1px solid var(--border); border-radius: 4px; color: var(--text-dim); cursor: pointer;
+  }
+  .layer-tag:hover { border-color: var(--accent); }
+  .layer-tag.active { background: var(--accent-dim); border-color: var(--accent); color: var(--accent); }
+  .layer-tag .layer-num { color: var(--accent); font-weight: 600; margin-right: 4px; }
+  .layer-list.disabled .layer-tag { opacity: 0.3; pointer-events: none; }
+  .layer-list.disabled .layer-tag.active { background: var(--surface-2); border-color: var(--border); color: var(--text-dim); }
+  .layer-check { accent-color: var(--accent); width: 13px; height: 13px; cursor: pointer; margin-right: 2px; }
+
+  /* Log */
+  .log-container {
+    background: var(--bg); border: 1px solid var(--border); border-radius: 6px;
+    min-height: 100px; overflow-y: auto; padding: 12px;
+    font-family: var(--mono); font-size: 11px; line-height: 1.7; color: var(--text-dim); scroll-behavior: smooth;
+    flex: 1;
+  }
+  .log-container::-webkit-scrollbar { width: 6px; }
+  .log-container::-webkit-scrollbar-track { background: transparent; }
+  .log-container::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+  .log-line { white-space: pre-wrap; word-break: break-all; }
+  .empty-state { text-align: center; padding: 24px; color: var(--text-dim); font-size: 13px; }
+
+  /* Modal */
+  .modal-overlay {
+    position: fixed; inset: 0; background: rgba(0,0,0,0.75); z-index: 200;
+    display: flex; align-items: center; justify-content: center;
+    opacity: 0; pointer-events: none; transition: opacity 0.2s;
+  }
+  .modal-overlay.active { opacity: 1; pointer-events: auto; }
+  .modal { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; max-width: 90vw; max-height: 85vh; overflow: auto; position: relative; min-width: 340px; }
+  .modal-header {
+    padding: 12px 18px; font-family: var(--mono); font-size: 12px; font-weight: 500;
+    color: var(--text-dim); border-bottom: 1px solid var(--border);
+    display: flex; justify-content: space-between; align-items: center;
+    position: sticky; top: 0; background: var(--surface); z-index: 1;
+  }
+  .modal-close { background: none; border: none; color: var(--text-dim); cursor: pointer; font-size: 18px; padding: 4px 8px; border-radius: 4px; }
+  .modal-close:hover { background: var(--surface-2); color: var(--text); }
+  .modal-body { padding: 16px; }
+  .modal-body.white-bg { background: #fff; }
+  .modal-body svg { width: 100%; height: auto; max-height: 70vh; display: block; }
+
+  /* File picker modal list */
+  .picker-list { list-style: none; }
+  .picker-item {
+    display: flex; align-items: center; padding: 10px 12px; gap: 10px; cursor: pointer;
+    border-radius: 6px; transition: background 0.1s;
+  }
+  .picker-item:hover { background: var(--surface-2); }
+  .picker-item.active { background: var(--accent-dim); }
+  .picker-thumb {
+    width: 40px; height: 40px; background: #fff; border-radius: 4px; flex-shrink: 0;
+    overflow: hidden; display: flex; align-items: center; justify-content: center;
+  }
+  .picker-thumb svg { width: 100%; height: 100%; }
+  .picker-info { flex: 1; min-width: 0; }
+  .picker-name { font-family: var(--mono); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .picker-meta { font-size: 10px; color: var(--text-dim); margin-top: 2px; }
+  .picker-delete { background: none; border: none; color: var(--text-dim); cursor: pointer; font-size: 13px; padding: 4px 8px; border-radius: 4px; flex-shrink: 0; }
+  .picker-delete:hover { background: var(--red-dim); color: var(--red); }
+  .picker-dropzone {
+    border: 2px dashed var(--border); border-radius: var(--radius); padding: 20px;
+    text-align: center; margin-top: 12px; font-family: var(--mono); font-size: 11px;
+    color: var(--text-dim); cursor: pointer; transition: all 0.2s;
+  }
+  .picker-dropzone:hover, .picker-dropzone.dragover { border-color: var(--accent); background: var(--accent-dim); }
+
+  /* Config */
+  .config-grid { display: flex; flex-direction: column; gap: 20px; }
+  .config-group-title { font-family: var(--mono); font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; color: var(--accent); padding-bottom: 6px; border-bottom: 1px solid var(--border); margin-top: 4px; }
+  .config-fields { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 14px; }
+  .config-field { display: flex; flex-direction: column; gap: 6px; }
+  .config-field label { font-family: var(--mono); font-size: 11px; font-weight: 500; color: var(--text-dim); display: flex; justify-content: space-between; align-items: baseline; }
+  .config-field label .cfg-value { color: var(--accent); font-weight: 600; font-size: 12px; }
+  .config-field input[type="range"] { -webkit-appearance: none; appearance: none; width: 100%; height: 6px; background: var(--surface-2); border-radius: 3px; outline: none; }
+  .config-field input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; width: 16px; height: 16px; background: var(--accent); border-radius: 50%; cursor: pointer; }
+  .config-field select, .config-field input[type="number"] { font-family: var(--mono); font-size: 12px; padding: 7px 10px; background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 6px; outline: none; }
+  .config-field select:focus, .config-field input[type="number"]:focus { border-color: var(--accent); }
+  .config-field select option { background: var(--bg); color: var(--text); }
+
+  .toast { position: fixed; bottom: 24px; right: 24px; font-family: var(--mono); font-size: 12px; padding: 10px 18px; border-radius: 6px; opacity: 0; transition: opacity 0.3s; pointer-events: none; z-index: 100; }
+  .toast.show { opacity: 1; }
+  .toast-ok { background: var(--green-dim); color: var(--green); border: 1px solid var(--green); }
+
+  @media (max-width: 600px) {
+    .app { padding: 16px 12px 60px; }
+    header { flex-direction: column; gap: 12px; align-items: flex-start; }
+  }
+</style>
+</head>
+<body>
+<div class="app">
+
+  <header>
+    <div class="logo">
+      <div class="logo-icon"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.85 2.85 0 0 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/><path d="m15 5 4 4"/></svg></div>
+      <h1>penplotter<span>/web</span></h1>
+    </div>
+    <div style="display:flex;align-items:center;gap:10px">
+      <button class="btn-icon" onclick="openConfigModal()" title="Configuration">&#9881;</button>
+      <div class="status-badge" id="statusBadge" data-state="idle">idle</div>
+    </div>
+  </header>
+
+  <!-- Controls bar -->
+  <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px;align-items:center">
+    <button class="btn" id="btnPause" onclick="pausePlot()" disabled>⏸ Pause</button>
+    <button class="btn" id="btnResume" onclick="resumePlot()" disabled>▶ Resume</button>
+    <button class="btn btn-danger" id="btnStop" onclick="stopPlot()" disabled>⏹ Stop</button>
+    <button class="btn btn-sm" id="btnHome" onclick="goHome()" style="display:none">⌂ Home</button>
+    <span id="manualSep" style="width:1px;height:24px;background:var(--border)"></span>
+    <button class="btn btn-sm" id="btnPenUp" onclick="penUp()">Pen ↑</button>
+    <button class="btn btn-sm" id="btnPenDown" onclick="penDown()">Pen ↓</button>
+    <button class="btn btn-sm" id="btnMore" onclick="openMoveModal()">...</button>
+  </div>
+
+  <!-- Progress bar -->
+  <div class="top-progress" id="plotProgress">
+    <div class="top-progress-track">
+      <div class="top-progress-bar" id="progressBar"></div>
+      <div class="top-progress-label">
+        <span class="top-progress-file" id="progressFile"></span>
+        <span class="top-progress-stats">
+          <span id="progressTime"></span>
+          <span class="eta" id="progressEta"></span>
+          <span id="progressPct">0%</span>
+        </span>
+      </div>
+    </div>
+  </div>
+
+  <!-- SVG File -->
+  <div class="section">
+    <div class="section-body">
+      <div id="selectedFileDisplay">
+        <div class="empty-state" id="noFileMsg">
+          No file selected
+        </div>
+      </div>
+    </div>
+  </div>
+
+
+  <!-- Log -->
+  <div class="section" style="flex:1;display:flex;flex-direction:column">
+    <div class="section-header">
+      <span>Log</span>
+    </div>
+    <div class="section-body" style="padding:0;flex:1;display:flex;flex-direction:column">
+      <div class="log-container" id="logContainer"></div>
+    </div>
+  </div>
+
+</div>
+
+<!-- Config modal -->
+<div class="modal-overlay" id="configModal">
+  <div class="modal" style="max-width:720px;width:90vw">
+    <div class="modal-header">
+      <span>Configuration</span>
+      <button class="modal-close" onclick="closeConfigModal()">&times;</button>
+    </div>
+    <div class="modal-body">
+      <div class="config-grid" id="configGrid"></div>
+      <div style="margin-top:16px;display:flex;justify-content:flex-end">
+        <button class="btn btn-accent" onclick="saveConfig()">Save</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Preview modal -->
+<div class="modal-overlay" id="previewModal">
+  <div class="modal">
+    <div class="modal-header">
+      <span id="previewName"></span>
+      <button class="modal-close" onclick="closePreview()">&times;</button>
+    </div>
+    <div class="modal-body white-bg" id="previewBox"></div>
+  </div>
+</div>
+
+<!-- Move modal -->
+<div class="modal-overlay" id="moveModal">
+  <div class="modal" style="min-width:auto">
+    <div class="modal-header">
+      <span>Move XY</span>
+      <button class="modal-close" onclick="closeMoveModal()">&times;</button>
+    </div>
+    <div class="modal-body" style="display:flex;justify-content:center;padding:24px">
+      <div class="mini-pad">
+        <div></div>
+        <button class="btn btn-sm" onclick="move(0,-1)">↑</button>
+        <div></div>
+        <button class="btn btn-sm" onclick="move(-1,0)">←</button>
+        <div class="pad-center">
+          <input type="number" id="moveDist" value="10" min="0.1" max="500" step="1">
+          <span class="pad-unit">mm</span>
+        </div>
+        <button class="btn btn-sm" onclick="move(1,0)">→</button>
+        <div></div>
+        <button class="btn btn-sm" onclick="move(0,1)">↓</button>
+        <div></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- File picker modal -->
+<div class="modal-overlay" id="pickerModal">
+  <div class="modal">
+    <div class="modal-header">
+      <span>Select SVG File</span>
+      <button class="modal-close" onclick="closePicker()">&times;</button>
+    </div>
+    <div class="modal-body">
+      <ul class="picker-list" id="pickerList"></ul>
+      <div class="picker-dropzone" id="pickerDrop" onclick="document.getElementById('fileInput').click()">
+        Drop SVG files here or <strong style="color:var(--accent)">click to upload</strong>
+      </div>
+    </div>
+  </div>
+</div>
+<input type="file" id="fileInput" accept=".svg" multiple style="display:none">
+
+<script>
+let currentState = 'idle';
+let prevState = 'idle';
+let lastLogVersion = -1;
+let selectedFile = null;
+let selectedFileMeta = null;
+let eventSource = null;
+const svgCache = {};
+
+const api = (path, opts = {}) =>
+  fetch(`/api${path}`, { ...opts, headers: { 'Content-Type': 'application/json', ...opts.headers } })
+    .then(r => r.json());
+
+// ---- Notifications ----
+let notifPermission = Notification.permission;
+async function requestNotifPermission() {
+  if ('Notification' in window && notifPermission === 'default') {
+    notifPermission = await Notification.requestPermission();
+  }
+}
+
+function sendNotification(title, body) {
+  if (notifPermission === 'granted') {
+    new Notification(title, { body, icon: '/static/icon.png' });
+  }
+}
+
+// ---- SVG cache ----
+async function fetchSvg(name) {
+  if (svgCache[name]) return svgCache[name];
+  try {
+    const res = await fetch(`/uploads/${encodeURIComponent(name)}`);
+    const text = await res.text();
+    svgCache[name] = text;
+    return text;
+  } catch (e) { return null; }
+}
+
+// ---- File picker modal ----
+async function openFilePicker() {
+  const { files } = await api('/files');
+  const list = document.getElementById('pickerList');
+  if (!files.length) {
+    list.innerHTML = '<li class="empty-state">No files uploaded yet</li>';
+  } else {
+    const deselectBtn = selectedFile ? `<li style="padding:6px 12px;margin-bottom:4px"><button class="btn btn-sm" onclick="unpickFile()">Deselect file</button></li>` : '';
+    list.innerHTML = deselectBtn + files.map(f => {
+      const date = new Date(f.modified);
+      const dateStr = formatDate(date);
+      const active = selectedFile === f.name ? ' active' : '';
+      return `
+      <li class="picker-item${active}" onclick="pickFile('${esc(f.name)}', ${f.size}, '${f.modified}')">
+        <div class="picker-thumb" id="pthumb_${btoa(f.name)}"></div>
+        <div class="picker-info">
+          <div class="picker-name">${esc(f.name)}</div>
+          <div class="picker-meta">${formatSize(f.size)} &middot; ${dateStr}</div>
+        </div>
+        <button class="picker-delete" onclick="event.stopPropagation(); deleteFile('${esc(f.name)}')" title="Delete">&#128465;</button>
+      </li>`;
+    }).join('');
+    for (const f of files) {
+      fetchSvg(f.name).then(svg => {
+        const el = document.getElementById('pthumb_' + btoa(f.name));
+        if (el && svg) el.innerHTML = svg;
+      });
+    }
+  }
+  document.getElementById('pickerModal').classList.add('active');
+}
+
+function closePicker() {
+  document.getElementById('pickerModal').classList.remove('active');
+}
+
+async function unpickFile() {
+  selectedFile = null;
+  selectedFileMeta = null;
+  api('/select', { method: 'POST' });
+  closePicker();
+  await updateSelectedFileDisplay();
+}
+
+async function pickFile(name, size, modified) {
+  selectedFile = name;
+  api(`/select/${encodeURIComponent(name)}`, { method: 'POST' });
+  selectedFileMeta = { name, size, modified };
+  closePicker();
+  await updateSelectedFileDisplay();
+  updateConfigSummary();
+  await loadLayers(name);
+}
+
+async function updateSelectedFileDisplay() {
+  const el = document.getElementById('selectedFileDisplay');
+  if (!selectedFile) {
+    el.innerHTML = `<div style="display:flex;align-items:center;gap:12px">
+      <button class="btn btn-accent" onclick="openFilePicker()">Select File</button>
+      <div class="picker-dropzone" id="inlineDrop" style="flex:1;margin:0;padding:14px" onclick="document.getElementById('fileInput2').click()">
+        or drop SVG here
+      </div>
+      <input type="file" id="fileInput2" accept=".svg" multiple style="display:none">
+    </div>`;
+    const drop = document.getElementById('inlineDrop');
+    const fi2 = document.getElementById('fileInput2');
+    drop.addEventListener('dragover', e => { e.preventDefault(); drop.classList.add('dragover'); });
+    drop.addEventListener('dragleave', () => drop.classList.remove('dragover'));
+    drop.addEventListener('drop', e => { e.preventDefault(); drop.classList.remove('dragover'); uploadInline(e.dataTransfer.files); });
+    fi2.addEventListener('change', () => { uploadInline(fi2.files); fi2.value = ''; });
+    return;
+  }
+  const meta = selectedFileMeta;
+  const dateStr = meta ? formatDate(meta.modified) : '';
+  const sizeStr = meta ? formatSize(meta.size) : '';
+  const name = selectedFile;
+  el.innerHTML = `
+    <div class="selected-file-layout">
+      <div class="selected-file-thumb" id="mainThumb" onclick="previewFile('${esc(name)}')"></div>
+      <div class="selected-file-content">
+        <div class="selected-file-row">
+          <button class="btn btn-lg btn-accent" id="btnPlot" onclick="startPlot()">Plot</button>
+          <span class="config-summary" id="configSummary"></span>
+          <span style="flex:1"></span>
+          <span class="selected-file-info">
+            <span class="selected-file-name">${esc(selectedFile)}</span>
+            <span class="selected-file-meta">${sizeStr}${dateStr ? ' &middot; ' + dateStr : ''}</span>
+          </span>
+          <button class="btn btn-sm" onclick="openFilePicker()">Change</button>
+        </div>
+        <div id="layerInfo" class="layer-list"></div>
+        <div id="estimateRow" style="margin-top:8px">
+          <button class="btn btn-sm" id="btnEstimate" onclick="runEstimate()">Calculate</button>
+          <span id="estimateResult" style="font-family:var(--mono);font-size:11px;color:var(--text-dim);margin-left:8px"></span>
+        </div>
+      </div>
+    </div>`;
+  updateConfigSummary();
+  fetchSvg(name).then(svg => {
+    const thumb = document.getElementById('mainThumb');
+    if (thumb && svg) thumb.innerHTML = svg;
+  });
+}
+
+// ---- Upload ----
+const pickerDrop = document.getElementById('pickerDrop');
+const fileInput = document.getElementById('fileInput');
+pickerDrop.addEventListener('dragover', e => { e.preventDefault(); pickerDrop.classList.add('dragover'); });
+pickerDrop.addEventListener('dragleave', () => pickerDrop.classList.remove('dragover'));
+pickerDrop.addEventListener('drop', e => { e.preventDefault(); pickerDrop.classList.remove('dragover'); uploadAndRefreshPicker(e.dataTransfer.files); });
+fileInput.addEventListener('change', () => { uploadAndRefreshPicker(fileInput.files); fileInput.value = ''; });
+
+async function uploadInline(files) {
+  for (const file of files) {
+    const fd = new FormData();
+    fd.append('file', file);
+    await fetch('/api/upload', { method: 'POST', body: fd });
+  }
+  // Auto-select the first uploaded file
+  if (files.length) {
+    const name = files[0].name;
+    const { files: list } = await api('/files');
+    const f = list.find(x => x.name === name);
+    if (f) await pickFile(f.name, f.size, f.modified);
+  }
+}
+
+async function uploadAndRefreshPicker(files) {
+  const { files: existing } = await api('/files');
+  const existingNames = new Set(existing.map(f => f.name));
+  for (const file of files) {
+    let name = file.name;
+    while (existingNames.has(name)) {
+      name = prompt(`"${name}" already exists. Enter a new name:`, name);
+      if (!name) break;
+      if (!name.toLowerCase().endsWith('.svg')) name += '.svg';
+    }
+    if (!name) continue;
+    const fd = new FormData();
+    fd.append('file', new File([file], name, { type: file.type }));
+    await fetch('/api/upload', { method: 'POST', body: fd });
+  }
+  openFilePicker();
+}
+
+async function deleteFile(name) {
+  if (!confirm(`Delete ${name}?`)) return;
+  delete svgCache[name];
+  if (selectedFile === name) { selectedFile = null; selectedFileMeta = null; updateSelectedFileDisplay(); }
+  await fetch(`/api/files/${encodeURIComponent(name)}`, { method: 'DELETE' });
+  // Refresh picker if open
+  if (document.getElementById('pickerModal').classList.contains('active')) openFilePicker();
+}
+
+// ---- Preview modal ----
+async function previewFile(name) {
+  const svg = await fetchSvg(name);
+  if (!svg) return;
+  document.getElementById('previewBox').innerHTML = svg;
+  document.getElementById('previewName').textContent = name;
+  document.getElementById('previewModal').classList.add('active');
+}
+
+function closePreview() {
+  document.getElementById('previewModal').classList.remove('active');
+  document.getElementById('previewBox').innerHTML = '';
+}
+document.getElementById('previewModal').addEventListener('click', e => { if (e.target === e.currentTarget) closePreview(); });
+document.getElementById('pickerModal').addEventListener('click', e => { if (e.target === e.currentTarget) closePicker(); });
+
+// ---- Layers ----
+async function loadLayers(name) {
+  const el = document.getElementById('layerInfo');
+  if (!el) return;
+  try {
+    const { layers } = await api(`/files/${encodeURIComponent(name)}/layers`);
+    if (layers.length) {
+      el.innerHTML = '<input type="checkbox" class="layer-check" id="layerMode" checked onchange="toggleLayerMode()">' +
+        '<span style="font-family:var(--mono);font-size:10px;color:var(--text-dim);margin-right:4px">Layers:</span>' + layers.map(l => {
+        const num = l.number != null ? l.number : 0;
+        const active = String(num) === String(selectedLayer) ? ' active' : '';
+        let displayLabel = l.label;
+        if (l.number != null) displayLabel = displayLabel.replace(/^\s*\d+\s*/, '');
+        return `<span class="layer-tag${active}" data-layer="${num}" onclick="setLayer(${num})">${l.number != null ? `<span class="layer-num">${l.number}</span>` : ''}${esc(displayLabel)}</span>`;
+      }).join('');
+    } else {
+      el.style.display = 'none';
+    }
+  } catch (e) { if (el) el.style.display = 'none'; }
+}
+
+let selectedLayer = 0;
+let estimateValid = false;
+let estimateVersion = 0;
+
+function invalidateEstimate() {
+  estimateValid = false;
+  estimateVersion++;
+  const el = document.getElementById('estimateResult');
+  if (el) el.textContent = '';
+  const btn = document.getElementById('btnEstimate');
+  if (btn) { btn.disabled = false; btn.textContent = 'Calculate'; }
+}
+
+async function runEstimate() {
+  if (!selectedFile) return;
+  const btn = document.getElementById('btnEstimate');
+  const el = document.getElementById('estimateResult');
+  btn.disabled = true;
+  btn.textContent = 'Calculating...';
+  el.textContent = '';
+  const version = ++estimateVersion;
+  const opts = {};
+  const layerChk = document.getElementById('layerMode');
+  if (layerChk && layerChk.checked) {
+    opts.mode = 'layers';
+    opts.layer = String(selectedLayer);
+  }
+  try {
+    const info = await api(`/estimate/${encodeURIComponent(selectedFile)}`, {
+      method: 'POST',
+      body: JSON.stringify({ options: opts })
+    });
+    if (version !== estimateVersion) return; // stale
+    if (info.error) {
+      el.innerHTML = `<span style="color:var(--red)">Error</span>`;
+    } else {
+      const parts = [];
+      if (info.estimated_time) parts.push(info.estimated_time);
+      if (info.path_length) parts.push('path ' + info.path_length);
+      if (info.total_distance) parts.push('total ' + info.total_distance);
+      el.textContent = parts.join(' · ') || 'No data';
+      estimateValid = true;
+    }
+    btn.textContent = 'Calculate';
+    btn.disabled = false;
+  } catch (e) {
+    if (version !== estimateVersion) return; // stale
+    el.innerHTML = `<span style="color:var(--red)">Error</span>`;
+    btn.textContent = 'Calculate';
+    btn.disabled = false;
+  }
+}
+
+function setLayer(num) {
+  const chk = document.getElementById('layerMode');
+  if (chk) chk.checked = true;
+  selectedLayer = num;
+  updateLayerTags();
+  toggleLayerMode();
+  invalidateEstimate();
+}
+
+function updateLayerTags() {
+  const val = String(selectedLayer);
+  document.querySelectorAll('.layer-tag').forEach(t => {
+    t.classList.toggle('active', t.dataset.layer === val);
+  });
+}
+
+function toggleLayerMode() {
+  const chk = document.getElementById('layerMode');
+  const checked = chk ? chk.checked : false;
+  const list = document.getElementById('layerInfo');
+  if (!list) return;
+  list.classList.toggle('disabled', !checked);
+  if (!checked) {
+    document.querySelectorAll('.layer-tag').forEach(t => t.classList.remove('active'));
+  } else {
+    updateLayerTags();
+  }
+  invalidateEstimate();
+}
+
+// ---- Plot controls ----
+async function startPlot() {
+  if (!selectedFile) { openFilePicker(); return; }
+  requestNotifPermission();
+  const opts = {};
+  const layerChk = document.getElementById('layerMode');
+  if (layerChk && layerChk.checked) {
+    opts.mode = 'layers';
+    opts.layer = String(selectedLayer);
+  }
+  const body = Object.keys(opts).length ? { options: opts } : {};
+  await api(`/plot/${encodeURIComponent(selectedFile)}`, { method: 'POST', body: JSON.stringify(body) });
+}
+
+async function pausePlot() { await api('/pause', { method: 'POST' }); }
+async function resumePlot() { await api('/resume', { method: 'POST' }); }
+async function stopPlot() {
+  if (!confirm('Stop current plot?')) return;
+  await api('/stop', { method: 'POST' });
+}
+async function penUp() { await api('/pen/up', { method: 'POST' }); }
+async function penDown() { await api('/pen/down', { method: 'POST' }); }
+async function goHome() { await api('/home', { method: 'POST' }); }
+function openMoveModal() { document.getElementById('moveModal').classList.add('active'); }
+function closeMoveModal() { document.getElementById('moveModal').classList.remove('active'); }
+document.getElementById('moveModal').addEventListener('click', e => { if (e.target === e.currentTarget) closeMoveModal(); });
+async function move(dx, dy) {
+  const dist = parseFloat(document.getElementById('moveDist').value) || 10;
+  await api('/move', { method: 'POST', body: JSON.stringify({ dx: dx * dist, dy: dy * dist }) });
+}
+
+// ---- SSE ----
+function connectSSE() {
+  if (eventSource) eventSource.close();
+  eventSource = new EventSource('/api/events');
+  eventSource.onmessage = (e) => { try { updateUI(JSON.parse(e.data)); } catch {} };
+  eventSource.onerror = () => { setTimeout(connectSSE, 3000); };
+}
+
+function formatTime(s) {
+  const m = Math.floor(s / 60);
+  const sec = s % 60;
+  return m > 0 ? `${m}m${String(sec).padStart(2,'0')}s` : `${sec}s`;
+}
+
+function updateUI(data) {
+  prevState = currentState;
+  currentState = data.state;
+
+  const badge = document.getElementById('statusBadge');
+  badge.dataset.state = data.state;
+  badge.textContent = data.state === 'plotting' && data.current_file
+    ? `plotting ${data.current_file}` : data.state;
+
+  const isPlotting = data.state === 'plotting';
+  const isPaused = data.state === 'paused';
+  document.getElementById('btnPause').disabled = !isPlotting;
+  document.getElementById('btnResume').disabled = !isPaused;
+  document.getElementById('btnStop').style.display = isPlotting ? '' : 'none';
+  document.getElementById('btnHome').style.display = data.can_home ? '' : 'none';
+  const hideManual = isPlotting ? 'none' : '';
+  document.getElementById('manualSep').style.display = hideManual;
+  document.getElementById('btnPenUp').style.display = hideManual;
+  document.getElementById('btnPenDown').style.display = hideManual;
+  document.getElementById('btnMore').style.display = hideManual;
+  const btnPlot = document.getElementById('btnPlot');
+  if (btnPlot) btnPlot.disabled = isPlotting;
+
+  // Progress
+  const showProgress = isPlotting || isPaused;
+  const progressEl = document.getElementById('plotProgress');
+  progressEl.classList.toggle('active', showProgress);
+  if (showProgress) {
+    document.getElementById('progressBar').style.width = data.progress + '%';
+    document.getElementById('progressPct').textContent = Math.round(data.progress) + '%';
+    document.getElementById('progressFile').textContent = data.current_file || '';
+    if (data.elapsed != null) {
+      document.getElementById('progressTime').textContent = formatTime(data.elapsed);
+      // ETA
+      const etaEl = document.getElementById('progressEta');
+      if (data.progress > 1) {
+        const remaining = Math.round(data.elapsed * (100 - data.progress) / data.progress);
+        etaEl.textContent = '~' + formatTime(remaining) + ' left';
+      } else { etaEl.textContent = ''; }
+    } else {
+      document.getElementById('progressTime').textContent = '';
+      document.getElementById('progressEta').textContent = '';
+    }
+  }
+
+  // Notifications
+  if (prevState === 'plotting' && data.state === 'idle') {
+    sendNotification('AxiDraw', `Plot completed: ${data.current_file || 'unknown'}`);
+  } else if (prevState === 'plotting' && data.state === 'paused') {
+    sendNotification('AxiDraw', 'Plot paused');
+  } else if (data.state === 'error' && prevState !== 'error') {
+    sendNotification('AxiDraw', `Error: ${data.error || 'unknown'}`);
+  }
+
+  // Log — only rebuild if changed
+  if (data.log_version !== lastLogVersion) {
+    lastLogVersion = data.log_version;
+    const logEl = document.getElementById('logContainer');
+    const atBottom = logEl.scrollTop + logEl.clientHeight >= logEl.scrollHeight - 20;
+    logEl.innerHTML = (data.log || []).map(l => {
+      const isErr = l.includes('ERROR');
+      return `<div class="log-line"${isErr ? ' style="color:var(--red)"' : ''}>${esc(l)}</div>`;
+    }).join('');
+    if (atBottom) logEl.scrollTop = logEl.scrollHeight;
+  }
+}
+
+function esc(s) { return s.replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' })[c]); }
+function formatDate(d) { return new Date(d).toLocaleDateString('fr-FR', { day:'2-digit', month:'2-digit', year:'2-digit', hour:'2-digit', minute:'2-digit' }); }
+function formatSize(bytes) {
+  if (bytes < 1024) return bytes + ' B';
+  if (bytes < 1048576) return (bytes / 1024).toFixed(1) + ' KB';
+  return (bytes / 1048576).toFixed(1) + ' MB';
+}
+function showToast(msg) {
+  let t = document.getElementById('toast');
+  if (!t) { t = document.createElement('div'); t.id = 'toast'; t.className = 'toast toast-ok'; document.body.appendChild(t); }
+  t.textContent = msg; t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 2000);
+}
+
+// ---- Config ----
+const CONFIG_SCHEMA = [
+  { group: 'Device', fields: [
+    { key: 'model', label: 'Model', type: 'select', default: 1, options: [
+      { value: 1, label: 'V2 / V3 / SE/A4' }, { value: 2, label: 'V3/A3 / SE/A3' },
+      { value: 3, label: 'V3 XLX' }, { value: 4, label: 'MiniKit' },
+      { value: 5, label: 'SE/A1' }, { value: 6, label: 'SE/A2' }, { value: 7, label: 'V3/B6' },
+    ]},
+    { key: 'penlift', label: 'Pen lift servo', type: 'select', default: 1, options: [
+      { value: 1, label: '1 — Default for model' }, { value: 2, label: '2 — Standard servo' },
+      { value: 3, label: '3 — Brushless servo' },
+    ]},
+  ]},
+  { group: 'Pen positions', fields: [
+    { key: 'pen_pos_up', label: 'Pen up height', type: 'range', min: 0, max: 100, step: 1, default: 60 },
+    { key: 'pen_pos_down', label: 'Pen down height', type: 'range', min: 0, max: 100, step: 1, default: 30 },
+    { key: 'pen_rate_raise', label: 'Pen raise speed', type: 'range', min: 1, max: 100, step: 1, default: 75 },
+    { key: 'pen_rate_lower', label: 'Pen lower speed', type: 'range', min: 1, max: 100, step: 1, default: 50 },
+    { key: 'pen_delay_up', label: 'Delay after raise (ms)', type: 'number', min: 0, max: 5000, step: 10, default: 0 },
+    { key: 'pen_delay_down', label: 'Delay after lower (ms)', type: 'number', min: 0, max: 5000, step: 10, default: 0 },
+  ]},
+  { group: 'Speed', fields: [
+    { key: 'speed_pendown', label: 'Speed pen down', type: 'range', min: 1, max: 100, step: 1, default: 25 },
+    { key: 'speed_penup', label: 'Speed pen up', type: 'range', min: 1, max: 100, step: 1, default: 75 },
+    { key: 'accel', label: 'Acceleration', type: 'range', min: 1, max: 100, step: 1, default: 75 },
+    { key: 'const_speed', label: 'Constant speed', type: 'select', default: 0, options: [
+      { value: 0, label: 'Off — variable speed' }, { value: 1, label: 'On — constant when pen down' },
+    ]},
+  ]},
+  { group: 'Path optimization', fields: [
+    { key: 'reordering', label: 'Reordering', type: 'select', default: 0, options: [
+      { value: 0, label: '0 — Least: connect adjoining only' }, { value: 1, label: '1 — Basic: reorder for speed' },
+      { value: 2, label: '2 — Full: reorder + reverse' }, { value: 4, label: '4 — None: preserve file order' },
+    ]},
+    { key: 'random_start', label: 'Random start (closed paths)', type: 'select', default: 0, options: [ { value: 0, label: 'Off' }, { value: 1, label: 'On' } ]},
+    { key: 'hiding', label: 'Hidden-line removal', type: 'select', default: 0, options: [ { value: 0, label: 'Off' }, { value: 1, label: 'On' } ]},
+  ]},
+  { group: 'Plot options', fields: [
+    { key: 'auto_rotate', label: 'Auto rotate', type: 'select', default: 1, options: [
+      { value: 1, label: 'On — auto portrait/landscape' }, { value: 0, label: 'Off — keep orientation' },
+    ]},
+    { key: 'copies', label: 'Copies (0 = continuous)', type: 'number', min: 0, max: 9999, step: 1, default: 1 },
+    { key: 'page_delay', label: 'Delay between copies (s)', type: 'number', min: 0, max: 3600, step: 1, default: 15 },
+    { key: 'resolution', label: 'Motor resolution', type: 'select', default: 1, options: [
+      { value: 1, label: '1 — High resolution (default)' }, { value: 2, label: '2 — Low resolution (faster)' },
+    ]},
+  ]},
+];
+let configValues = {};
+function parseConfig(content) {
+  const vals = {};
+  for (const line of content.split('\n')) {
+    const m = line.match(/^\s*(\w+)\s*=\s*(.+?)(\s*#.*)?$/);
+    if (m) { let val = m[2].trim(); if (val === 'True') val = 1; else if (val === 'False') val = 0; else val = parseFloat(val) || 0; vals[m[1]] = val; }
+  }
+  return vals;
+}
+function serializeConfig(vals) {
+  const boolKeys = new Set(['const_speed', 'random_start', 'hiding', 'auto_rotate']);
+  const lines = ['# AxiDraw configuration — managed by axidraw-web', ''];
+  for (const f of CONFIG_SCHEMA.flatMap(g => g.fields)) {
+    const v = vals[f.key] !== undefined ? vals[f.key] : f.default;
+    lines.push(`${f.key}${' '.repeat(Math.max(1, 24 - f.key.length))}= ${boolKeys.has(f.key) ? (v ? 'True' : 'False') : String(Number(v))}`);
+  }
+  lines.push(''); return lines.join('\n');
+}
+function buildConfigUI() {
+  const grid = document.getElementById('configGrid');
+  let html = '';
+  for (const group of CONFIG_SCHEMA) {
+    html += `<div class="config-group-title">${esc(group.group)}</div><div class="config-fields">`;
+    for (const f of group.fields) {
+      const val = configValues[f.key] !== undefined ? configValues[f.key] : f.default;
+      html += '<div class="config-field">';
+      if (f.type === 'range') {
+        html += `<label>${esc(f.label)} <span class="cfg-value" id="cfgv_${f.key}">${val}</span></label>`;
+        html += `<input type="range" min="${f.min}" max="${f.max}" step="${f.step}" value="${val}" data-key="${f.key}" oninput="onConfigInput(this)">`;
+      } else if (f.type === 'select') {
+        html += `<label>${esc(f.label)}</label><select data-key="${f.key}" onchange="onConfigInput(this)">`;
+        for (const o of f.options) html += `<option value="${o.value}" ${Number(val) === o.value ? 'selected' : ''}>${esc(o.label)}</option>`;
+        html += '</select>';
+      } else if (f.type === 'number') {
+        html += `<label>${esc(f.label)}</label>`;
+        html += `<input type="number" min="${f.min}" max="${f.max}" step="${f.step}" value="${val}" data-key="${f.key}" onchange="onConfigInput(this)">`;
+      }
+      html += '</div>';
+    }
+    html += '</div>';
+  }
+  grid.innerHTML = html;
+}
+function onConfigInput(el) { configValues[el.dataset.key] = Number(el.value); const v = document.getElementById('cfgv_' + el.dataset.key); if (v) v.textContent = el.value; invalidateEstimate(); }
+function updateConfigSummary() {
+  const el = document.getElementById('configSummary');
+  if (!el) return;
+  const models = { 1:'A4', 2:'A3', 3:'XLX', 4:'Mini', 5:'A1', 6:'A2', 7:'B6' };
+  const m = models[configValues.model] || '?';
+  const up = configValues.pen_pos_up ?? 60;
+  const dn = configValues.pen_pos_down ?? 30;
+  const spd = configValues.speed_pendown ?? 25;
+  el.innerHTML = `<span style="color:var(--accent)">${m}</span> \u2191<span style="color:var(--accent)">${up}</span> \u2193<span style="color:var(--accent)">${dn}</span> \u26A1<span style="color:var(--accent)">${spd}</span>`;
+}
+function openConfigModal() { document.getElementById('configModal').classList.add('active'); }
+function closeConfigModal() { document.getElementById('configModal').classList.remove('active'); }
+document.getElementById('configModal').addEventListener('click', e => { if (e.target === e.currentTarget) closeConfigModal(); });
+
+async function loadConfig() { try { const { content } = await api('/config'); configValues = parseConfig(content); } catch(e) { configValues = {}; } buildConfigUI(); updateConfigSummary(); }
+async function saveConfig() { await api('/config', { method:'POST', body: JSON.stringify({ content: serializeConfig(configValues) }) }); updateConfigSummary(); showToast('Configuration saved'); }
+
+// ---- Init ----
+// Auto-select first file
+(async () => {
+  const status = await api('/status');
+  const { files } = await api('/files');
+  if (status.selected_file && files.find(f => f.name === status.selected_file)) {
+    const f = files.find(x => x.name === status.selected_file);
+    selectedFile = f.name;
+    selectedFileMeta = f;
+  }
+  await updateSelectedFileDisplay();
+  if (selectedFile) {
+    await loadLayers(selectedFile);
+  }
+})();
+loadConfig().then(() => updateConfigSummary());
+connectSSE();
+requestNotifPermission();
+</script>
+</body>
+</html>
