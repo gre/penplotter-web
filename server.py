@@ -336,6 +336,164 @@ plotter = PlotterManager()
 
 
 # ---------------------------------------------------------------------------
+# Camera streaming (optional)
+# ---------------------------------------------------------------------------
+
+CAMERA_CONFIG_PATH = APP_DIR / "db" / "camera.json"
+
+
+def _load_camera_config() -> dict:
+    if CAMERA_CONFIG_PATH.exists():
+        try:
+            return json.loads(CAMERA_CONFIG_PATH.read_text())
+        except Exception:
+            pass
+    return {}
+
+
+def _save_camera_config(cfg: dict):
+    CAMERA_CONFIG_PATH.parent.mkdir(exist_ok=True)
+    CAMERA_CONFIG_PATH.write_text(json.dumps(cfg, indent=2) + "\n")
+
+
+class CameraManager:
+    """Manages a camera subprocess that outputs MJPEG to stdout.
+
+    The command is user-configured via db/camera.json. No command = no camera.
+    A background reader thread parses JPEG frames and stores the latest.
+    The camera auto-stops when no client has polled for IDLE_TIMEOUT seconds.
+    """
+
+    IDLE_TIMEOUT = 5  # seconds without clients before stopping
+
+    def __init__(self):
+        self._process: Optional[subprocess.Popen] = None
+        self._lock = threading.Lock()
+        self._clients: int = 0
+        self._latest_frame: Optional[bytes] = None
+        self._frame_event = asyncio.Event()
+        self._reader_thread: Optional[threading.Thread] = None
+        self._stop_timer: Optional[threading.Timer] = None
+        self._command: Optional[str] = None
+        self._load_command()
+
+    def _load_command(self):
+        cfg = _load_camera_config()
+        self._command = cfg.get("command") or None
+
+    def is_available(self) -> bool:
+        return self._command is not None
+
+    def get_latest_frame(self) -> Optional[bytes]:
+        return self._latest_frame
+
+    def _start(self):
+        """Start the configured camera command."""
+        cmd = self._command
+        if not cmd:
+            return
+        with self._lock:
+            if self._process and self._process.poll() is None:
+                return
+            self._process = subprocess.Popen(
+                cmd,
+                shell=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
+            )
+            self._reader_thread = threading.Thread(target=self._read_loop, daemon=True)
+            self._reader_thread.start()
+
+    def _stop(self):
+        with self._lock:
+            proc = self._process
+            self._process = None
+            self._latest_frame = None
+        if proc and proc.poll() is None:
+            proc.terminate()
+            try:
+                proc.wait(timeout=3)
+            except Exception:
+                proc.kill()
+
+    def _read_loop(self):
+        """Background thread: read MJPEG stream, extract frames."""
+        proc = self._process
+        if not proc or not proc.stdout:
+            return
+        buf = b""
+        loop = None
+        try:
+            loop = asyncio.get_event_loop()
+        except RuntimeError:
+            pass
+        while proc.poll() is None:
+            try:
+                chunk = proc.stdout.read(4096)
+            except Exception:
+                break
+            if not chunk:
+                break
+            buf += chunk
+            while True:
+                start = buf.find(b"\xff\xd8")
+                if start == -1:
+                    buf = b""
+                    break
+                end = buf.find(b"\xff\xd9", start + 2)
+                if end == -1:
+                    buf = buf[start:]
+                    break
+                frame = buf[start:end + 2]
+                buf = buf[end + 2:]
+                self._latest_frame = frame
+                if loop and loop.is_running():
+                    loop.call_soon_threadsafe(self._frame_event.set)
+
+    def acquire(self):
+        with self._lock:
+            self._clients += 1
+            needs_start = self._clients == 1
+        if needs_start:
+            self._start()
+
+    def release(self):
+        with self._lock:
+            self._clients = max(0, self._clients - 1)
+            if self._clients > 0:
+                return
+            if self._stop_timer:
+                self._stop_timer.cancel()
+            self._stop_timer = threading.Timer(self.IDLE_TIMEOUT, self._maybe_stop)
+            self._stop_timer.start()
+
+    def _maybe_stop(self):
+        with self._lock:
+            if self._clients > 0:
+                return
+        self._stop()
+
+    async def stream_frames(self):
+        """Async generator yielding JPEG frames for a single client."""
+        last_frame = None
+        while True:
+            self._frame_event.clear()
+            frame = self._latest_frame
+            if frame and frame is not last_frame:
+                last_frame = frame
+                yield frame
+            try:
+                await asyncio.wait_for(self._frame_event.wait(), timeout=2.0)
+            except asyncio.TimeoutError:
+                # No new frame in 2s — camera may have died
+                if self._process is None or self._process.poll() is not None:
+                    break
+
+
+camera = CameraManager()
+
+
+# ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
@@ -349,7 +507,9 @@ async def _run_in_thread(func, *args):
 
 @app.get("/", response_class=HTMLResponse)
 async def index():
-    return HTMLResponse((APP_DIR / "static" / "index.html").read_text())
+    resp = HTMLResponse((APP_DIR / "static" / "index.html").read_text())
+    resp.headers["Cache-Control"] = "no-cache"
+    return resp
 
 
 @app.get("/api/status")
@@ -585,6 +745,79 @@ async def event_stream():
             await asyncio.sleep(0.5)
 
     return StreamingResponse(generate(), media_type="text/event-stream")
+
+
+# ---------------------------------------------------------------------------
+# Camera endpoints
+# ---------------------------------------------------------------------------
+
+@app.get("/api/camera/status")
+async def camera_status():
+    return {"available": camera.is_available(), "command": camera._command or ""}
+
+
+@app.get("/api/camera/config")
+async def get_camera_config():
+    return {"command": camera._command or ""}
+
+
+@app.post("/api/camera/config")
+async def save_camera_config(request: Request):
+    body = await request.json()
+    command = body.get("command", "").strip()
+    camera._stop()
+    _save_camera_config({"command": command})
+    camera._load_command()
+    return {"saved": True, "available": camera.is_available()}
+
+
+@app.get("/api/camera/stream")
+async def camera_stream():
+    if not camera.is_available():
+        raise HTTPException(404, "No camera detected")
+
+    async def generate():
+        camera.acquire()
+        try:
+            async for frame in camera.stream_frames():
+                yield (
+                    b"--frame\r\n"
+                    b"Content-Type: image/jpeg\r\n\r\n"
+                    + frame
+                    + b"\r\n"
+                )
+        finally:
+            camera.release()
+
+    return StreamingResponse(
+        generate(),
+        media_type="multipart/x-mixed-replace; boundary=frame",
+    )
+
+
+@app.get("/api/camera/snapshot")
+async def camera_snapshot():
+    """Return the latest JPEG frame from the running camera, or start it briefly."""
+    if not camera.is_available():
+        raise HTTPException(404, "No camera detected")
+    camera.acquire()
+    try:
+        frame = camera.get_latest_frame()
+        if not frame:
+            try:
+                await asyncio.wait_for(camera._frame_event.wait(), timeout=3.0)
+            except asyncio.TimeoutError:
+                raise HTTPException(500, "No frame available")
+            frame = camera.get_latest_frame()
+        if not frame:
+            raise HTTPException(500, "No frame available")
+        return StreamingResponse(
+            iter([frame]),
+            media_type="image/jpeg",
+            headers={"Cache-Control": "no-cache"},
+        )
+    finally:
+        camera.release()
 
 
 # ---------------------------------------------------------------------------
