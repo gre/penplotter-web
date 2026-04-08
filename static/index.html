@@ -264,6 +264,10 @@
     <button class="btn btn-sm" id="btnPenUp" onclick="penUp()">Pen ↑</button>
     <button class="btn btn-sm" id="btnPenDown" onclick="penDown()">Pen ↓</button>
     <button class="btn btn-sm" id="btnMore" onclick="openMoveModal()">...</button>
+    <span style="flex:1"></span>
+    <div id="cameraThumbnail" style="display:none;cursor:pointer" onclick="openCameraModal()">
+      <img id="cameraThumb" style="width:80px;height:60px;object-fit:cover;border-radius:6px;border:1px solid var(--border);display:block;background:#000">
+    </div>
   </div>
 
   <!-- Progress bar -->
@@ -314,6 +318,14 @@
     </div>
     <div class="modal-body">
       <div class="config-grid" id="configGrid"></div>
+      <div class="config-group-title" style="margin-top:20px">Camera (optional)</div>
+      <p style="font-size:11px;color:var(--text-dim);margin:6px 0 10px;line-height:1.5">
+        Shell command that outputs MJPEG to stdout. Leave empty to disable.<br>
+        Examples: <code style="font-size:10px;color:var(--accent)">rpicam-vid -t 0 --width 1332 --height 990 --framerate 15 --codec mjpeg -q 50 -n -o -</code>
+        &nbsp;|&nbsp; <code style="font-size:10px;color:var(--accent)">ffmpeg -f v4l2 -i /dev/video0 -vf scale=640:480 -f mjpeg -q:v 5 pipe:1</code>
+      </p>
+      <input type="text" id="cameraCommand" placeholder="No camera configured" spellcheck="false"
+        style="width:100%;font-family:var(--mono);font-size:12px;padding:8px 10px;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:6px;outline:none">
       <div style="margin-top:16px;display:flex;justify-content:flex-end">
         <button class="btn btn-accent" onclick="saveConfig()">Save</button>
       </div>
@@ -329,6 +341,19 @@
       <button class="modal-close" onclick="closePreview()">&times;</button>
     </div>
     <div class="modal-body white-bg" id="previewBox"></div>
+  </div>
+</div>
+
+<!-- Camera modal -->
+<div class="modal-overlay" id="cameraModal">
+  <div class="modal" style="max-width:90vw;width:fit-content">
+    <div class="modal-header">
+      <span>Camera</span>
+      <button class="modal-close" onclick="closeCameraModal()">&times;</button>
+    </div>
+    <div class="modal-body" style="padding:0;background:#000">
+      <img id="cameraFeed" style="max-width:85vw;max-height:75vh;display:block" alt="Camera feed">
+    </div>
   </div>
 </div>
 
@@ -718,6 +743,40 @@ async function move(dx, dy) {
   await api('/move', { method: 'POST', body: JSON.stringify({ dx: dx * dist, dy: dy * dist }) });
 }
 
+// ---- Camera ----
+let cameraAvailable = false;
+let cameraThumbInterval = null;
+
+async function initCamera() {
+  try {
+    const { available } = await api('/camera/status');
+    cameraAvailable = available;
+    if (available) {
+      document.getElementById('cameraThumbnail').style.display = '';
+      refreshCameraThumb();
+      if (!cameraThumbInterval) cameraThumbInterval = setInterval(refreshCameraThumb, 10000);
+    }
+  } catch {}
+}
+
+function refreshCameraThumb() {
+  if (!cameraAvailable) return;
+  const img = document.getElementById('cameraThumb');
+  if (img) img.src = '/api/camera/snapshot?' + Date.now();
+}
+
+function openCameraModal() {
+  const feed = document.getElementById('cameraFeed');
+  feed.src = '/api/camera/stream';
+  document.getElementById('cameraModal').classList.add('active');
+}
+
+function closeCameraModal() {
+  document.getElementById('cameraModal').classList.remove('active');
+  document.getElementById('cameraFeed').src = '';
+}
+document.getElementById('cameraModal').addEventListener('click', e => { if (e.target === e.currentTarget) closeCameraModal(); });
+
 // ---- SSE ----
 function connectSSE() {
   if (eventSource) eventSource.close();
@@ -919,8 +978,33 @@ function openConfigModal() { document.getElementById('configModal').classList.ad
 function closeConfigModal() { document.getElementById('configModal').classList.remove('active'); }
 document.getElementById('configModal').addEventListener('click', e => { if (e.target === e.currentTarget) closeConfigModal(); });
 
-async function loadConfig() { try { const { content } = await api('/config'); configValues = parseConfig(content); } catch(e) { configValues = {}; } buildConfigUI(); updateConfigSummary(); }
-async function saveConfig() { await api('/config', { method:'POST', body: JSON.stringify({ content: serializeConfig(configValues) }) }); updateConfigSummary(); showToast('Configuration saved'); }
+async function loadConfig() {
+  const [plotterCfg, cameraCfg] = await Promise.all([
+    api('/config').catch(() => null),
+    api('/camera/config').catch(() => null),
+  ]);
+  configValues = plotterCfg ? parseConfig(plotterCfg.content) : {};
+  if (cameraCfg) document.getElementById('cameraCommand').value = cameraCfg.command || '';
+  buildConfigUI(); updateConfigSummary();
+}
+async function saveConfig() {
+  await api('/config', { method:'POST', body: JSON.stringify({ content: serializeConfig(configValues) }) });
+  const camCmd = document.getElementById('cameraCommand').value.trim();
+  const resp = await api('/camera/config', { method:'POST', body: JSON.stringify({ command: camCmd }) });
+  updateConfigSummary();
+  showToast('Configuration saved');
+  // Update camera UI
+  cameraAvailable = resp.available;
+  const thumb = document.getElementById('cameraThumbnail');
+  if (cameraAvailable) {
+    thumb.style.display = '';
+    refreshCameraThumb();
+  } else {
+    thumb.style.display = 'none';
+    if (cameraThumbInterval) { clearInterval(cameraThumbInterval); cameraThumbInterval = null; }
+    closeCameraModal();
+  }
+}
 
 // ---- Init ----
 // Auto-select first file
@@ -939,6 +1023,7 @@ async function saveConfig() { await api('/config', { method:'POST', body: JSON.s
 })();
 loadConfig().then(() => updateConfigSummary());
 connectSSE();
+initCamera();
 requestNotifPermission();
 </script>
 </body>
